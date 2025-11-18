@@ -29,28 +29,36 @@ class ReferenceValidator:
     """Validates inline references against a reference list."""
 
     # Comprehensive inline citation patterns
+    # Note: Patterns handle both regular and escaped characters (e.g., \( and \. from mammoth conversion)
     CITATION_PATTERNS = [
-        # Numeric citations
+        # Numeric citations (various formats)
         r'\[(\d+)\]',  # [1], [2], etc.
+        r'\\\[(\d+)\\\]',  # Escaped: \[1\], \[2\]
         r'\^(\d+)',    # ^1, ^2 (superscript in markdown)
         r'\((\d+)\)',  # (1), (2)
+        r'\\\((\d+)\\\)',  # Escaped: \(1\), \(2\)
 
-        # Author-year patterns (various formats)
-        r"\(([A-Z][A-Za-z''\-]+(?:\s+et\s+al\.?)?[,\s]+\d{4}[a-z]?)\)",  # (Author et al., 2020)
-        r"\[([A-Z][A-Za-z''\-]+(?:\s+et\s+al\.?)?[,\s]+\d{4}[a-z]?)\]",  # [Author et al., 2020]
-        r"\(([A-Z][A-Za-z''\-]+\s+and\s+[A-Z][A-Za-z''\-]+[,\s]+\d{4}[a-z]?)\)",  # (Author and Author, 2020)
-        r"\(([A-Z][A-Za-z''\-]+\s+&\s+[A-Z][A-Za-z''\-]+[,\s]+\d{4}[a-z]?)\)",  # (Author & Author, 2020)
-        r"\(([A-Z][A-Za-z''\-]+\s+\d{4}[a-z]?)\)",  # (Author 2020)
-        r"\[([A-Z][A-Za-z''\-]+\s+\d{4}[a-z]?)\]",  # [Author 2020]
+        # Single author with year - handle escaped and unescaped
+        r"(?:\(|\\?\()\s*([A-Z][A-Za-z''\-\.]+\s*,?\s*\d{4}[a-z]?)\s*(?:\)|\\?\))",  # (Author, 2020) or (Author 2020)
+        r"(?:\[|\\?\[)\s*([A-Z][A-Za-z''\-\.]+\s*,?\s*\d{4}[a-z]?)\s*(?:\]|\\?\])",  # [Author, 2020] or [Author 2020]
 
-        # Multiple authors variations
-        r"\(([A-Z][A-Za-z''\-]+,\s+[A-Z][A-Za-z''\-]+,?\s+(?:and|&)\s+[A-Z][A-Za-z''\-]+[,\s]+\d{4}[a-z]?)\)",  # (A, B, and C, 2020)
+        # Two authors with & or "and"
+        r"(?:\(|\\?\()\s*([A-Z][A-Za-z''\-\.]+\s+(?:&|and)\s+[A-Z][A-Za-z''\-\.]+\s*,?\s*\d{4}[a-z]?)\s*(?:\)|\\?\))",
+        r"(?:\[|\\?\[)\s*([A-Z][A-Za-z''\-\.]+\s+(?:&|and)\s+[A-Z][A-Za-z''\-\.]+\s*,?\s*\d{4}[a-z]?)\s*(?:\]|\\?\])",
 
-        # Author with initials
-        r"\(([A-Z][A-Za-z''\-]+\s+[A-Z]\.(?:\s+[A-Z]\.)?[,\s]+\d{4}[a-z]?)\)",  # (Smith J., 2020)
+        # Et al. citations (with or without comma, with or without period)
+        r"(?:\(|\\?\()\s*([A-Z][A-Za-z''\-\.]+\s+et\s+al\\?\.?\s*,?\s*\d{4}[a-z]?)\s*(?:\)|\\?\))",
+        r"(?:\[|\\?\[)\s*([A-Z][A-Za-z''\-\.]+\s+et\s+al\\?\.?\s*,?\s*\d{4}[a-z]?)\s*(?:\]|\\?\])",
 
-        # Common patterns with "et al"
-        r"\(([A-Z][A-Za-z''\-]+\s+et\s+al\.\s+\d{4}[a-z]?)\)",  # (Smith et al. 2020)
+        # Three or more authors listed
+        r"(?:\(|\\?\()\s*([A-Z][A-Za-z''\-\.]+(?:\s*,\s*[A-Z][A-Za-z''\-\.]+)+\s*,?\s*(?:&|and)\s+[A-Z][A-Za-z''\-\.]+\s*,?\s*\d{4}[a-z]?)\s*(?:\)|\\?\))",
+
+        # Author with initials (e.g., Smith, J., 2020)
+        r"(?:\(|\\?\()\s*([A-Z][A-Za-z''\-\.]+\s*,?\s*[A-Z]\\?\.(?:\s*[A-Z]\\?\.)*\s*,?\s*\d{4}[a-z]?)\s*(?:\)|\\?\))",
+
+        # Very flexible catch-all: any capital letter followed by text, comma/space, and 4-digit year in parens/brackets
+        r"(?:\(|\\?\()\s*([A-Z][A-Za-z''\-\.,\s&]+\d{4}[a-z]?)\s*(?:\)|\\?\))",
+        r"(?:\[|\\?\[)\s*([A-Z][A-Za-z''\-\.,\s&]+\d{4}[a-z]?)\s*(?:\]|\\?\])",
     ]
 
     def __init__(self, docx_path: str, verbose: bool = False):
@@ -88,6 +96,12 @@ class ReferenceValidator:
         """Extract all inline references from the markdown content."""
         print("\nExtracting inline references...")
 
+        # Show sample content in verbose mode to help debug
+        if self.verbose:
+            print("\n  Sample document content (first 500 chars):")
+            sample = self.markdown_content[:500].replace('\n', ' ')
+            print(f"    {sample}...")
+
         inline_refs_set = set()
         self.pattern_matches = defaultdict(list)
 
@@ -96,6 +110,8 @@ class ReferenceValidator:
             if matches:
                 if self.verbose:
                     print(f"  Pattern {i+1} matched: {len(matches)} citations")
+                    print(f"    Pattern: {pattern}")
+                    print(f"    Sample matches: {matches[:3]}")
                 for match in matches:
                     inline_refs_set.add(match)
                     self.pattern_matches[pattern].append(match)
@@ -107,6 +123,10 @@ class ReferenceValidator:
             print("\n  Sample inline references detected:")
             for ref in list(self.inline_refs)[:10]:
                 print(f"    - {ref}")
+        elif self.verbose and not self.inline_refs:
+            print("\n  ⚠ No inline references detected!")
+            print("  Tip: Check the sample content above to see citation format")
+            print("  Common formats: (Author, 2020), [1], (Smith et al., 2019)")
 
         return self.inline_refs
 
@@ -246,10 +266,9 @@ class ReferenceValidator:
             report.append("\n" + "-" * 70)
             report.append("REFERENCE LIST ENTRIES:")
             report.append("-" * 70)
-            for i, ref in enumerate(self.reference_list[:10], 1):  # Show first 10
+            # Show ALL references instead of just first 10
+            for i, ref in enumerate(self.reference_list, 1):
                 report.append(f"  {i}. {ref[:100]}{'...' if len(ref) > 100 else ''}")
-            if len(self.reference_list) > 10:
-                report.append(f"  ... and {len(self.reference_list) - 10} more")
 
         report.append("\n" + "=" * 70)
         if not self.missing_refs:
@@ -338,6 +357,21 @@ def main():
     # Step 6: Save files
     validator.save_markdown(output_path)
     validator.save_report()
+
+    # In verbose mode, provide additional guidance if no citations found
+    if verbose and len(validator.inline_refs) == 0:
+        print("\n" + "!" * 70)
+        print("TROUBLESHOOTING: No inline citations were detected")
+        print("!" * 70)
+        print("\nPossible reasons:")
+        print("  1. Citations may be in footnotes/endnotes (not supported)")
+        print("  2. Citations may use a non-standard format")
+        print("  3. Document may not contain inline citations")
+        print("\nTo diagnose:")
+        print(f"  1. Open the generated .md file: {validator.docx_path.with_suffix('.md')}")
+        print("  2. Search for text that looks like citations")
+        print("  3. Share a sample citation with the developer to add support")
+        print("!" * 70)
 
     # Exit with appropriate code
     sys.exit(0 if not missing else 1)
