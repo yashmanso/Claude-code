@@ -48,13 +48,28 @@ This will:
 1. Convert `document.docx` to Markdown
 2. Save the output as `document.md`
 3. Validate all references
-4. Display a detailed report
+4. Display a detailed report in the console
+5. Save the validation report as `document.validation_report.txt`
 
 ### Specify Output File
 
 ```bash
 python word_to_markdown_validator.py document.docx output.md
 ```
+
+### Verbose Mode (Debugging)
+
+Use `--verbose` to see detailed debug information about what references are being detected:
+
+```bash
+python word_to_markdown_validator.py document.docx --verbose
+```
+
+This shows:
+- Which citation patterns matched
+- Sample inline references found
+- Sample reference list entries
+- All document headers (useful for troubleshooting)
 
 ### Example Output
 
@@ -105,21 +120,29 @@ REFERENCE LIST ENTRIES:
 ======================================================================
 
 ✓ Markdown saved to: document.md
+✓ Validation report saved to: document.validation_report.txt
 ```
 
 ## Supported Citation Formats
 
-The tool recognizes several common academic citation formats:
+The tool recognizes many common academic citation formats:
 
 ### Numeric Citations
-- `[1]`, `[2]`, `[3]`
+- `[1]`, `[2]`, `[3]` - Bracketed numbers
+- `^1`, `^2` - Superscript numbers (markdown format)
+- `(1)`, `(2)` - Parenthetical numbers
 
 ### Author-Year Citations
-- `(Smith, 2020)`
-- `(Jones & Brown, 2019)`
-- `(Davis et al., 2021)`
-- `[Author, 2020]`
-- `(Author 2020)`
+- `(Smith, 2020)` - Single author with comma
+- `(Smith 2020)` - Single author without comma
+- `[Smith, 2020]` - Bracketed citation
+- `(Jones & Brown, 2019)` - Two authors with ampersand
+- `(Jones and Brown, 2019)` - Two authors with "and"
+- `(Davis et al., 2021)` - Multiple authors with et al.
+- `(Davis et al. 2021)` - Et al. without comma
+- `(Smith, Jones, and Brown, 2020)` - Three+ authors listed
+- `(Smith J., 2020)` - Author with initials
+- Works with author names containing apostrophes and hyphens
 
 ## Reference Section Detection
 

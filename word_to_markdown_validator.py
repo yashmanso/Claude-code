@@ -28,21 +28,40 @@ except ImportError:
 class ReferenceValidator:
     """Validates inline references against a reference list."""
 
-    # Common inline citation patterns
+    # Comprehensive inline citation patterns
     CITATION_PATTERNS = [
+        # Numeric citations
         r'\[(\d+)\]',  # [1], [2], etc.
-        r'\(([A-Z][a-z]+(?:\s+(?:and|&)\s+[A-Z][a-z]+)?(?:\s+et\s+al\.?)?,?\s+\d{4}[a-z]?)\)',  # (Author, 2020)
-        r'\[([A-Z][a-z]+(?:\s+(?:and|&)\s+[A-Z][a-z]+)?(?:\s+et\s+al\.?)?,?\s+\d{4}[a-z]?)\]',  # [Author, 2020]
-        r'\(([A-Z][a-z]+\s+\d{4}[a-z]?)\)',  # (Author 2020)
+        r'\^(\d+)',    # ^1, ^2 (superscript in markdown)
+        r'\((\d+)\)',  # (1), (2)
+
+        # Author-year patterns (various formats)
+        r"\(([A-Z][A-Za-z''\-]+(?:\s+et\s+al\.?)?[,\s]+\d{4}[a-z]?)\)",  # (Author et al., 2020)
+        r"\[([A-Z][A-Za-z''\-]+(?:\s+et\s+al\.?)?[,\s]+\d{4}[a-z]?)\]",  # [Author et al., 2020]
+        r"\(([A-Z][A-Za-z''\-]+\s+and\s+[A-Z][A-Za-z''\-]+[,\s]+\d{4}[a-z]?)\)",  # (Author and Author, 2020)
+        r"\(([A-Z][A-Za-z''\-]+\s+&\s+[A-Z][A-Za-z''\-]+[,\s]+\d{4}[a-z]?)\)",  # (Author & Author, 2020)
+        r"\(([A-Z][A-Za-z''\-]+\s+\d{4}[a-z]?)\)",  # (Author 2020)
+        r"\[([A-Z][A-Za-z''\-]+\s+\d{4}[a-z]?)\]",  # [Author 2020]
+
+        # Multiple authors variations
+        r"\(([A-Z][A-Za-z''\-]+,\s+[A-Z][A-Za-z''\-]+,?\s+(?:and|&)\s+[A-Z][A-Za-z''\-]+[,\s]+\d{4}[a-z]?)\)",  # (A, B, and C, 2020)
+
+        # Author with initials
+        r"\(([A-Z][A-Za-z''\-]+\s+[A-Z]\.(?:\s+[A-Z]\.)?[,\s]+\d{4}[a-z]?)\)",  # (Smith J., 2020)
+
+        # Common patterns with "et al"
+        r"\(([A-Z][A-Za-z''\-]+\s+et\s+al\.\s+\d{4}[a-z]?)\)",  # (Smith et al. 2020)
     ]
 
-    def __init__(self, docx_path: str):
+    def __init__(self, docx_path: str, verbose: bool = False):
         """Initialize validator with a Word document path."""
         self.docx_path = Path(docx_path)
         self.markdown_content = ""
         self.inline_refs = []
         self.reference_list = []
         self.missing_refs = []
+        self.verbose = verbose
+        self.pattern_matches = defaultdict(list)  # Track which patterns matched what
 
     def convert_to_markdown(self) -> str:
         """Convert Word document to Markdown format."""
@@ -70,13 +89,24 @@ class ReferenceValidator:
         print("\nExtracting inline references...")
 
         inline_refs_set = set()
+        self.pattern_matches = defaultdict(list)
 
-        for pattern in self.CITATION_PATTERNS:
+        for i, pattern in enumerate(self.CITATION_PATTERNS):
             matches = re.findall(pattern, self.markdown_content)
-            inline_refs_set.update(matches)
+            if matches:
+                if self.verbose:
+                    print(f"  Pattern {i+1} matched: {len(matches)} citations")
+                for match in matches:
+                    inline_refs_set.add(match)
+                    self.pattern_matches[pattern].append(match)
 
         self.inline_refs = sorted(list(inline_refs_set))
         print(f"✓ Found {len(self.inline_refs)} unique inline references")
+
+        if self.verbose and self.inline_refs:
+            print("\n  Sample inline references detected:")
+            for ref in list(self.inline_refs)[:10]:
+                print(f"    - {ref}")
 
         return self.inline_refs
 
@@ -100,6 +130,8 @@ class ReferenceValidator:
             for header_pattern in ref_headers:
                 if re.match(header_pattern, line, re.IGNORECASE):
                     ref_section_start = i
+                    if self.verbose:
+                        print(f"  Found reference section at line {i+1}: '{line.strip()}'")
                     break
             if ref_section_start != -1:
                 break
@@ -107,6 +139,11 @@ class ReferenceValidator:
         if ref_section_start == -1:
             print("⚠ Warning: Could not find reference section")
             print("  Looking for sections with headers: References, Bibliography, Works Cited, etc.")
+            if self.verbose:
+                print("\n  Showing all lines with '#' (headers) in the document:")
+                for i, line in enumerate(lines):
+                    if line.strip().startswith('#'):
+                        print(f"    Line {i+1}: {line.strip()}")
             return []
 
         # Extract references from that section onwards
@@ -119,6 +156,12 @@ class ReferenceValidator:
         ]
 
         print(f"✓ Found {len(self.reference_list)} entries in reference list")
+
+        if self.verbose and self.reference_list:
+            print("\n  Sample reference list entries:")
+            for ref in self.reference_list[:5]:
+                print(f"    - {ref[:100]}{'...' if len(ref) > 100 else ''}")
+
         return self.reference_list
 
     def validate_references(self) -> Tuple[List[str], Dict[str, List[str]]]:
@@ -227,24 +270,46 @@ class ReferenceValidator:
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(self.markdown_content)
 
-        print(f"\n✓ Markdown saved to: {output_path}")
+        print(f"✓ Markdown saved to: {output_path}")
         return output_path
+
+    def save_report(self, report_path: str = None) -> Path:
+        """Save the validation report to a file."""
+        if report_path is None:
+            report_path = self.docx_path.with_suffix('.validation_report.txt')
+        else:
+            report_path = Path(report_path)
+
+        report_content = self.generate_report()
+
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(report_content)
+
+        print(f"✓ Validation report saved to: {report_path}")
+        return report_path
 
 
 def main():
     """Main entry point for the script."""
     if len(sys.argv) < 2:
-        print("Usage: python word_to_markdown_validator.py <word_document.docx> [output.md]")
+        print("Usage: python word_to_markdown_validator.py <word_document.docx> [output.md] [--verbose]")
         print("\nThis script will:")
         print("  1. Convert the Word document to Markdown")
         print("  2. Extract all inline references")
         print("  3. Extract the reference list")
         print("  4. Validate that all inline references exist in the reference list")
         print("  5. Generate a detailed validation report")
+        print("  6. Save the report to a .validation_report.txt file")
+        print("\nOptions:")
+        print("  --verbose    Show detailed debug information during processing")
         sys.exit(1)
 
-    docx_path = sys.argv[1]
-    output_path = sys.argv[2] if len(sys.argv) > 2 else None
+    # Parse arguments
+    verbose = '--verbose' in sys.argv or '-v' in sys.argv
+    args = [arg for arg in sys.argv[1:] if not arg.startswith('-')]
+
+    docx_path = args[0]
+    output_path = args[1] if len(args) > 1 else None
 
     # Check if input file exists
     if not Path(docx_path).exists():
@@ -252,7 +317,7 @@ def main():
         sys.exit(1)
 
     # Create validator and run the process
-    validator = ReferenceValidator(docx_path)
+    validator = ReferenceValidator(docx_path, verbose=verbose)
 
     # Step 1: Convert to markdown
     validator.convert_to_markdown()
@@ -270,8 +335,9 @@ def main():
     report = validator.generate_report()
     print("\n" + report)
 
-    # Step 6: Save markdown file
+    # Step 6: Save files
     validator.save_markdown(output_path)
+    validator.save_report()
 
     # Exit with appropriate code
     sys.exit(0 if not missing else 1)

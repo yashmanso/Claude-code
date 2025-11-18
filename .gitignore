@@ -26,3 +26,4 @@ Thumbs.db
 *.docx
 *.md
 !README.md
+*.validation_report.txt
